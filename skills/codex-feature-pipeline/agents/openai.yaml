@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Feature Pipeline"
+  short_description: "Subagent feature shipping workflow"
+  default_prompt: "Use $codex-feature-pipeline to run a subagent-only feature pipeline for this change."

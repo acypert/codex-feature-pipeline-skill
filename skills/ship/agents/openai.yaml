@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ship"
+  short_description: "Run subagent feature pipeline"
+  default_prompt: "Use $ship to run the subagent-only Codex feature pipeline for this change."
