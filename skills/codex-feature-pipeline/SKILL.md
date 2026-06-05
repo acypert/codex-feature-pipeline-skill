@@ -214,16 +214,19 @@ Green tests are not enough. Block if behavior is wrong, risky, or materially unv
 
 ## External Codex Review Gate
 
-After Final Reviewer returns `SHIP`, the Leader must run a separate Codex CLI session against the uncommitted changes. This is not a subagent and not the Leader's own review.
+After Final Reviewer returns `SHIP`, the Leader must run a separate Codex CLI session against the uncommitted changes. This is not a subagent and not the Leader's own review. Its primary purpose is independent architectural and code-health review, not another task-completion check.
+
+The external reviewer should be anchored on the diff and repository architecture, not on the plan's local success criteria. It should ask whether the change worsens boundaries, abstractions, coupling, ownership, state flow, security posture, testability, or long-term maintainability even when the requested feature appears complete.
 
 Run from the repository root and write the final external review output to `.pipeline/external-review.md`.
 
 Use generic `codex exec`, not `codex exec review --uncommitted` with a custom prompt. Some Codex CLI builds reject custom prompts on the `review --uncommitted` subcommand or require the long output flag when that subcommand is present. The generic exec path keeps custom review instructions and skill selection reliable:
 
 ```bash
-codex exec --sandbox read-only -c 'model_reasoning_effort="xhigh"' --output-last-message .pipeline/external-review.md "Perform a read-only code review of the uncommitted changes in this repository. First inspect the working tree with git status --short, git diff --stat, git diff --no-ext-diff, git diff --cached --no-ext-diff, and git ls-files --others --exclude-standard as needed. Look for code smells, architectural concerns, incorrect abstractions, coupling, maintainability risks, missing or weak tests, and issues introduced by the diff. Infer which domain skills apply based on the work accomplished. Explicitly invoke or read relevant skills before reviewing, such as agent-patterns for agent/orchestration changes, codex-security skills for security-sensitive changes, frontend/build-web skills for frontend changes, or other matching local skills. Do not modify files, run destructive commands, commit, merge, or deploy. Output markdown with:
+codex exec --sandbox read-only -c 'model_reasoning_effort="xhigh"' --output-last-message .pipeline/external-review.md "Perform a read-only independent architectural and code-health review of the uncommitted changes in this repository. This is not a task-completion review; assume the feature may already satisfy its plan, and focus on whether the diff introduces architectural problems, code smells, incorrect abstractions, unnecessary coupling, unclear ownership boundaries, brittle state flow, security posture regressions, maintainability risks, missing or weak tests, or other issues that should block shipping. First inspect the working tree with git status --short, git diff --stat, git diff --no-ext-diff, git diff --cached --no-ext-diff, and git ls-files --others --exclude-standard as needed. Infer which domain skills apply based on the work accomplished. Explicitly invoke or read relevant skills before reviewing, such as agent-patterns for agent/orchestration changes, codex-security skills for security-sensitive changes, frontend/build-web skills for frontend changes, or other matching local skills. Do not modify files, run destructive commands, commit, merge, or deploy. Output markdown with:
 VERDICT: PASS, CHANGES_REQUESTED, or BLOCK
 SKILLS_USED:
+ARCHITECTURAL_REVIEW:
 FINDINGS:
 QUESTION_OR_BLOCKER:"
 ```
