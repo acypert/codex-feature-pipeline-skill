@@ -1,11 +1,11 @@
 ---
 name: codex-feature-pipeline
-description: Subagent-only feature delivery pipeline for Codex. Use when the user asks to ship, build, implement, or change a feature through a delegated workflow where the initiating session remains only the leader/orchestrator, with planner/critic review loops, HITL stop conditions, implementation, testing, fixing, and final review handled by subagents.
+description: Subagent-only feature delivery pipeline for Codex. Use when the user asks to ship, build, implement, or change a feature through a leader-orchestrated workflow with planner/critic review loops, HITL stop conditions, subagent implementation/testing/fixing/final review, and an external codex exec review gate.
 ---
 
 # Codex Feature Pipeline
 
-Run a feature request through a delegated Codex pipeline. The initiating session is the Leader only; all substantive work is performed by subagents through explicit handoff files.
+Run a feature request through a delegated Codex pipeline. The initiating session is the Leader only; all substantive work is performed by subagents through explicit handoff files. After Final Reviewer returns `SHIP`, the Leader runs an independent external Codex review gate and delegates any accepted fixes back to subagents.
 
 ## Non-Negotiable Orchestration Rule
 
@@ -41,6 +41,7 @@ Use `.pipeline/` for handoffs:
 - `.pipeline/changes.md`: Executor/Fixer change summary
 - `.pipeline/test-results.md`: Test Engineer output
 - `.pipeline/review.md`: Final Reviewer output
+- `.pipeline/external-review.md`: independent `codex exec` review output after Final Reviewer returns `SHIP`
 
 Each stage subagent owns its artifact. The Leader verifies presence and reads status, but does not patch stage artifacts.
 
@@ -56,7 +57,7 @@ At the start of a new `/ship` workflow, before spawning any subagent:
 
 Only preserve an existing `.pipeline/` directory when the user is explicitly resuming the same paused workflow after HITL or interruption.
 
-After Final Reviewer returns `SHIP`, the Leader must read the final artifacts, report the verdict, then delete `.pipeline/` unless the user explicitly asks to preserve the artifacts for debugging or audit.
+After the External Codex Review Gate returns `PASS`, the Leader must read the final artifacts, report the verdict, then delete `.pipeline/` unless the user explicitly asks to preserve the artifacts for debugging or audit.
 
 ## Subagent Selection
 
@@ -89,7 +90,10 @@ Do not set all subagents to `xhigh` by default. Spend the highest reasoning budg
 7. Spawn Final Reviewer. Require `.pipeline/review.md`.
 8. If Final Reviewer returns `NEEDS WORK`, spawn Fixer or Executor with the review findings, then return to Tester and Final Reviewer.
 9. If Final Reviewer returns `BLOCK`, stop and report the blocker.
-10. If Final Reviewer returns `SHIP`, report the verdict, changed files, tests run, and remaining risks, then delete `.pipeline/` unless preservation was explicitly requested. Do not merge or deploy unless the user explicitly asks after the final verdict.
+10. If Final Reviewer returns `SHIP`, run the External Codex Review Gate before reporting final success.
+11. If External Codex Review returns `CHANGES_REQUESTED`, triage the findings. For findings the Leader agrees are plausible and in scope, spawn Fixer or Executor with `.pipeline/external-review.md`, then return to Tester, Final Reviewer, and the External Codex Review Gate. If the Leader disagrees with a material finding, spawn another external review or stop for HITL; do not silently ignore material concerns.
+12. If External Codex Review returns `BLOCK`, stop and report the blocker.
+13. If External Codex Review returns `PASS`, report the verdict, changed files, tests run, external review summary, and remaining risks, then delete `.pipeline/` unless preservation was explicitly requested. Do not merge or deploy unless the user explicitly asks after the final verdict.
 
 ## Planner/Critic Loop
 
@@ -118,7 +122,7 @@ Stop for human input when any of these occur:
 - Critic says user intent or business priority is needed
 - production access, secrets, credentials, paid services, destructive actions, merge/deploy approval, or external account changes are required
 - tests require unavailable services or unsafe side effects
-- Planner/Critic, test/fix, or review/fix loops do not converge within their iteration limits
+- Planner/Critic, test/fix, review/fix, or external-review/fix loops do not converge within their iteration limits
 
 HITL output must include:
 
@@ -208,10 +212,50 @@ Read the original request, `.pipeline/context.md`, `.pipeline/plan.md`, `.pipeli
 
 Green tests are not enough. Block if behavior is wrong, risky, or materially unverified.
 
+## External Codex Review Gate
+
+After Final Reviewer returns `SHIP`, the Leader must run a separate Codex CLI session against the uncommitted changes. This is not a subagent and not the Leader's own review. Its primary purpose is independent architectural and code-health review, not another task-completion check.
+
+The external reviewer should be anchored on the diff and repository architecture, not on the plan's local success criteria. It should ask whether the change worsens boundaries, abstractions, coupling, ownership, state flow, security posture, testability, or long-term maintainability even when the requested feature appears complete.
+
+Run from the repository root and write the final external review output to `.pipeline/external-review.md`.
+
+Use generic `codex exec`, not `codex exec review --uncommitted` with a custom prompt. Some Codex CLI builds reject custom prompts on the `review --uncommitted` subcommand or require the long output flag when that subcommand is present. The generic exec path keeps custom review instructions and skill selection reliable:
+
+```bash
+codex exec --sandbox read-only -c 'model_reasoning_effort="xhigh"' --output-last-message .pipeline/external-review.md "Perform a read-only independent architectural and code-health review of the uncommitted changes in this repository. This is not a task-completion review; assume the feature may already satisfy its plan, and focus on whether the diff introduces architectural problems, code smells, incorrect abstractions, unnecessary coupling, unclear ownership boundaries, brittle state flow, security posture regressions, maintainability risks, missing or weak tests, or other issues that should block shipping. First inspect the working tree with git status --short, git diff --stat, git diff --no-ext-diff, git diff --cached --no-ext-diff, and git ls-files --others --exclude-standard as needed. Infer which domain skills apply based on the work accomplished. Explicitly invoke or read relevant skills before reviewing, such as agent-patterns for agent/orchestration changes, codex-security skills for security-sensitive changes, frontend/build-web skills for frontend changes, or other matching local skills. Do not modify files, run destructive commands, commit, merge, or deploy. Output markdown with:
+VERDICT: PASS, CHANGES_REQUESTED, or BLOCK
+SKILLS_USED:
+ARCHITECTURAL_REVIEW:
+FINDINGS:
+QUESTION_OR_BLOCKER:"
+```
+
+If generic `codex exec` is unavailable, fallback to the native review subcommand without a custom prompt and with the long output flag:
+
+```bash
+codex exec review --uncommitted -c 'model_reasoning_effort="xhigh"' --output-last-message .pipeline/external-review.md
+```
+
+When using the fallback, the external review may not report `SKILLS_USED`. Treat the saved review as the independent artifact anyway, and require a clear `PASS`, `CHANGES_REQUESTED`, or `BLOCK` interpretation before proceeding.
+
+The external review verdict means:
+
+- `PASS`: no requested changes from the independent review
+- `CHANGES_REQUESTED`: one or more actionable concerns should be considered before final reporting
+- `BLOCK`: review could not complete or found an issue that requires user input
+
+The Leader may triage whether external findings are plausible, in scope, and consistent with the approved plan.
+
+When the Leader agrees with a `CHANGES_REQUESTED` finding, the Leader must spawn Fixer or Executor with the external review findings. The fixing subagent updates `.pipeline/changes.md` with the accepted findings, rejected findings and rationale, files changed, and tests or review stages that must be rerun. After delegated fixes, the Leader must rerun Tester, Final Reviewer, and the External Codex Review Gate.
+
+When the Leader disagrees with a material external finding, the Leader must either spawn another external `codex exec` review with the disputed finding called out or stop for HITL. Only bypass a finding without another review when it is clearly out of scope, factually wrong from artifact evidence, or already covered by an explicit user decision; record that rationale in `.pipeline/run.md`.
+
 ## Loop Limits
 
 - Planner/Critic: 5 iterations, then HITL
 - Test/Fix: 3 iterations, then HITL unless the next fix is obvious and low risk
 - Review/Fix: 3 iterations, then HITL
+- External Review/Fix: 2 iterations, then HITL
 
 Prefer stopping with a precise HITL question over continuing an unbounded loop.
