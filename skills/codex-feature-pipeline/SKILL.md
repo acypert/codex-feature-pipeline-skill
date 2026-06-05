@@ -221,7 +221,7 @@ Run from the repository root and write the final external review output to `.pip
 Use generic `codex exec`, not `codex exec review --uncommitted` with a custom prompt. Some Codex CLI builds reject custom prompts on the `review --uncommitted` subcommand or require the long output flag when that subcommand is present. The generic exec path keeps custom review instructions and skill selection reliable:
 
 ```bash
-codex exec --sandbox read-only --output-last-message .pipeline/external-review.md "Perform a read-only code review of the uncommitted changes in this repository. First inspect the working tree with git status --short, git diff --stat, git diff --no-ext-diff, git diff --cached --no-ext-diff, and git ls-files --others --exclude-standard as needed. Look for code smells, architectural concerns, incorrect abstractions, coupling, maintainability risks, missing or weak tests, and issues introduced by the diff. Infer which domain skills apply based on the work accomplished. Explicitly invoke or read relevant skills before reviewing, such as agent-patterns for agent/orchestration changes, codex-security skills for security-sensitive changes, frontend/build-web skills for frontend changes, or other matching local skills. Do not modify files, run destructive commands, commit, merge, or deploy. Output markdown with:
+codex exec --sandbox read-only -c 'model_reasoning_effort="xhigh"' --output-last-message .pipeline/external-review.md "Perform a read-only code review of the uncommitted changes in this repository. First inspect the working tree with git status --short, git diff --stat, git diff --no-ext-diff, git diff --cached --no-ext-diff, and git ls-files --others --exclude-standard as needed. Look for code smells, architectural concerns, incorrect abstractions, coupling, maintainability risks, missing or weak tests, and issues introduced by the diff. Infer which domain skills apply based on the work accomplished. Explicitly invoke or read relevant skills before reviewing, such as agent-patterns for agent/orchestration changes, codex-security skills for security-sensitive changes, frontend/build-web skills for frontend changes, or other matching local skills. Do not modify files, run destructive commands, commit, merge, or deploy. Output markdown with:
 VERDICT: PASS, CHANGES_REQUESTED, or BLOCK
 SKILLS_USED:
 FINDINGS:
@@ -231,7 +231,7 @@ QUESTION_OR_BLOCKER:"
 If generic `codex exec` is unavailable, fallback to the native review subcommand without a custom prompt and with the long output flag:
 
 ```bash
-codex exec review --uncommitted --output-last-message .pipeline/external-review.md
+codex exec review --uncommitted -c 'model_reasoning_effort="xhigh"' --output-last-message .pipeline/external-review.md
 ```
 
 When using the fallback, the external review may not report `SKILLS_USED`. Treat the saved review as the independent artifact anyway, and require a clear `PASS`, `CHANGES_REQUESTED`, or `BLOCK` interpretation before proceeding.
