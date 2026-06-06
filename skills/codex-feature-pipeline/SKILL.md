@@ -1,6 +1,6 @@
 ---
 name: codex-feature-pipeline
-description: Subagent-only feature delivery pipeline for Codex. Use when the user asks to ship, build, implement, or change a feature through a leader-orchestrated workflow with planner/critic review loops, HITL stop conditions, subagent implementation/testing/fixing/final review, and an external codex exec review gate.
+description: Subagent-only feature delivery pipeline for Codex. Use when the user asks to ship, build, implement, or change a feature through a leader-orchestrated workflow with planner/critic review loops, HITL stop conditions, subagent implementation/testing/fixing/type-interface cleanup/final review, and an external codex exec review gate.
 ---
 
 # Codex Feature Pipeline
@@ -40,6 +40,8 @@ Use `.pipeline/` for handoffs:
 - `.pipeline/hitl.md`: HITL question, options, and recommended default
 - `.pipeline/changes.md`: Executor/Fixer change summary
 - `.pipeline/test-results.md`: Test Engineer output
+- `.pipeline/type-interface-report.md`: Type Interface Organizer markdown report and verdict
+- `.pipeline/type-interface-summary.json`: Type Interface Organizer JSON summary, when produced
 - `.pipeline/review.md`: Final Reviewer output
 - `.pipeline/external-review.md`: independent `codex exec` review output after Final Reviewer returns `SHIP`
 
@@ -72,6 +74,7 @@ Preferred stage mapping:
 | Plan Critic | `critic` or custom critic prompt | `xhigh` |
 | Executor | `executor` / `worker` | `high` |
 | Tester | `test-engineer` | `medium`; upgrade to `high` for cross-cutting, brittle, or failure-prone behavior |
+| Type Interface Organizer | custom prompt with `$type-interface-organizer` | `high`; upgrade to `xhigh` for monorepos, public API types, broad TS ownership, or large duplicate graphs |
 | Fixer | `build-fixer` / `executor` | `high` |
 | Final Reviewer | `code-reviewer` / `verifier` | `xhigh` |
 
@@ -87,13 +90,16 @@ Do not set all subagents to `xhigh` by default. Spend the highest reasoning budg
 4. Spawn Executor only after plan approval. Require `.pipeline/changes.md`.
 5. Spawn Tester. Require `.pipeline/test-results.md`.
 6. If tests fail, spawn Fixer, then return to Tester.
-7. Spawn Final Reviewer. Require `.pipeline/review.md`.
-8. If Final Reviewer returns `NEEDS WORK`, spawn Fixer or Executor with the review findings, then return to Tester and Final Reviewer.
-9. If Final Reviewer returns `BLOCK`, stop and report the blocker.
-10. If Final Reviewer returns `SHIP`, run the External Codex Review Gate before reporting final success.
-11. If External Codex Review returns `CHANGES_REQUESTED`, triage the findings. For findings the Leader agrees are plausible and in scope, spawn Fixer or Executor with `.pipeline/external-review.md`, then return to Tester, Final Reviewer, and the External Codex Review Gate. If the Leader disagrees with a material finding, spawn another external review or stop for HITL; do not silently ignore material concerns.
-12. If External Codex Review returns `BLOCK`, stop and report the blocker.
-13. If External Codex Review returns `PASS`, report the verdict, changed files, tests run, external review summary, and remaining risks, then delete `.pipeline/` unless preservation was explicitly requested. Do not merge or deploy unless the user explicitly asks after the final verdict.
+7. If the repo is TypeScript or the diff includes TS/TSX files, spawn Type Interface Organizer with `$type-interface-organizer`. Require `.pipeline/type-interface-report.md`.
+8. If Type Interface Organizer applies conservative edits, return to Tester before proceeding.
+9. If Type Interface Organizer returns `BLOCK`, stop and report the blocker.
+10. Spawn Final Reviewer. Require `.pipeline/review.md`.
+11. If Final Reviewer returns `NEEDS WORK`, spawn Fixer or Executor with the review findings, then return to Tester, Type Interface Organizer when applicable, and Final Reviewer.
+12. If Final Reviewer returns `BLOCK`, stop and report the blocker.
+13. If Final Reviewer returns `SHIP`, run the External Codex Review Gate before reporting final success.
+14. If External Codex Review returns `CHANGES_REQUESTED`, triage the findings. For findings the Leader agrees are plausible and in scope, spawn Fixer or Executor with `.pipeline/external-review.md`, then return to Tester, Type Interface Organizer when applicable, Final Reviewer, and the External Codex Review Gate. If the Leader disagrees with a material finding, spawn another external review or stop for HITL; do not silently ignore material concerns.
+15. If External Codex Review returns `BLOCK`, stop and report the blocker.
+16. If External Codex Review returns `PASS`, report the verdict, changed files, tests run, type/interface summary when applicable, external review summary, and remaining risks, then delete `.pipeline/` unless preservation was explicitly requested. Do not merge or deploy unless the user explicitly asks after the final verdict.
 
 ## Planner/Critic Loop
 
@@ -122,7 +128,7 @@ Stop for human input when any of these occur:
 - Critic says user intent or business priority is needed
 - production access, secrets, credentials, paid services, destructive actions, merge/deploy approval, or external account changes are required
 - tests require unavailable services or unsafe side effects
-- Planner/Critic, test/fix, review/fix, or external-review/fix loops do not converge within their iteration limits
+- Planner/Critic, test/fix, type-interface/test, review/fix, or external-review/fix loops do not converge within their iteration limits
 
 HITL output must include:
 
@@ -196,17 +202,49 @@ Read `.pipeline/plan.md`, `.pipeline/changes.md`, and the changed files. Add or 
 
 Do not fix implementation code.
 
+### Type Interface Organizer
+
+Run this stage only when the repository has `tsconfig.json` or the changed files include TypeScript/TSX. If neither is true, skip the stage and note the skip in `.pipeline/run.md`.
+
+Spawn a subagent with `$type-interface-organizer` injected. The subagent must read the active `$type-interface-organizer` skill body before doing the work. Prefer `~/.agents/skills/type-interface-organizer/SKILL.md`, then `$CODEX_HOME/skills/type-interface-organizer/SKILL.md`, then `~/.codex/skills/type-interface-organizer/SKILL.md`.
+
+The stage goal is conservative type/interface analysis and dedup after tests pass but before Final Reviewer approval. This placement ensures type/interface cleanup is included in the final semantic review and the external architectural review.
+
+The Type Interface Organizer subagent must:
+
+- confirm the repository root and locate `tsconfig.json`
+- run report mode before edits
+- write the markdown report to `.pipeline/type-interface-report.md`
+- write JSON summary to `.pipeline/type-interface-summary.json` when analyzer support is available
+- apply only analyzer-marked conservative edits allowed by `$type-interface-organizer`
+- treat the pipeline as an explicit request for conservative type/interface cleanup edits
+- update `.pipeline/changes.md` when edits are applied
+- leave non-conservative proposals as report-only findings
+- run typecheck and focused tests after edits when commands are discoverable
+
+The report must include one verdict:
+
+- `VERDICT: SKIPPED`: not a TypeScript repo or no TS/TSX surface
+- `VERDICT: REPORT_ONLY`: report produced, no conservative edits applied
+- `VERDICT: CHANGES_APPLIED`: conservative edits applied and verification attempted
+- `VERDICT: BLOCK`: analyzer, dependency, typecheck baseline, or ownership issue prevents safe completion
+
+If the verdict is `CHANGES_APPLIED`, the Leader must rerun Tester before Final Reviewer.
+
+If the verdict is `BLOCK`, the Leader stops for HITL unless the blocker is a missing optional analyzer dependency that can be installed safely in the skill directory without changing the target repo.
+
 ### Fixer
 
 Read the approved plan, changes, and failures or review findings. Make only the minimal scoped fixes needed. Update `.pipeline/changes.md` with what changed and why. Do not change requirements or silently skip failing coverage.
 
 ### Final Reviewer
 
-Read the original request, `.pipeline/context.md`, `.pipeline/plan.md`, `.pipeline/changes.md`, `.pipeline/test-results.md`, and the actual diff. Write `.pipeline/review.md` with:
+Read the original request, `.pipeline/context.md`, `.pipeline/plan.md`, `.pipeline/changes.md`, `.pipeline/test-results.md`, `.pipeline/type-interface-report.md` when present, and the actual diff. Write `.pipeline/review.md` with:
 
 - `VERDICT: SHIP`, `NEEDS WORK`, or `BLOCK`
 - whether implementation matches the plan
 - whether tests are meaningful
+- whether type/interface cleanup was skipped, report-only, safely applied, or blocked when TypeScript is present
 - correctness, security, performance, and maintainability concerns
 - exact fixes required for `NEEDS WORK` or `BLOCK`
 
@@ -255,6 +293,7 @@ When the Leader disagrees with a material external finding, the Leader must eith
 
 - Planner/Critic: 5 iterations, then HITL
 - Test/Fix: 3 iterations, then HITL unless the next fix is obvious and low risk
+- Type Interface/Test: 2 iterations, then HITL
 - Review/Fix: 3 iterations, then HITL
 - External Review/Fix: 2 iterations, then HITL
 
