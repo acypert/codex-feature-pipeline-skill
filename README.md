@@ -53,10 +53,11 @@ The initiating Codex session is only the Leader/orchestrator. All substantive wo
 4. Planner and Critic loop until the Critic approves or HITL is required.
 5. Executor implements the approved plan.
 6. Tester adds/runs focused verification.
-7. Fixer handles failures or review findings.
-8. Final Reviewer decides `SHIP`, `NEEDS WORK`, or `BLOCK`.
-9. After `SHIP`, a separate generic `codex exec` session performs independent architectural/code-health review of the uncommitted changes with `model_reasoning_effort="xhigh"` and saves `.pipeline/external-review.md`.
-10. If that external review requests changes, the Leader delegates accepted fixes to a subagent, then reruns Tester, Final Reviewer, and the external review gate.
+7. For TypeScript repos or TS/TSX diffs, Type Interface Organizer runs `$type-interface-organizer` for report-first conservative type/interface cleanup.
+8. Fixer handles failures or review findings.
+9. Final Reviewer decides `SHIP`, `NEEDS WORK`, or `BLOCK`.
+10. After `SHIP`, a separate generic `codex exec` session performs independent architectural/code-health review of the uncommitted changes with `model_reasoning_effort="xhigh"` and saves `.pipeline/external-review.md`.
+11. If that external review requests changes, the Leader delegates accepted fixes to a subagent, then reruns Tester, Type Interface Organizer when applicable, Final Reviewer, and the external review gate.
 
 The workflow uses `.pipeline/` for ephemeral handoff files. The skill instructs the Leader to ignore it locally, reset it before a new run, and delete it after the external review gate returns `PASS` unless preservation is explicitly requested.
 
