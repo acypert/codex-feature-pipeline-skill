@@ -27,6 +27,26 @@ To install somewhere else:
 SKILLS_HOME=/path/to/skills PROMPTS_HOME=/path/to/prompts ./install.sh
 ```
 
+### Optional Type Interface Organizer
+
+The Type Interface Organizer stage depends on the companion [`acypert/type-interface-organizer-skill`](https://github.com/acypert/type-interface-organizer-skill) skill.
+
+Interactive installs ask whether to install it. Non-interactive installs skip it by default so the feature pipeline remains installable without network access or npm setup.
+
+Install both skills in one pass:
+
+```bash
+./install.sh --with-type-interface-organizer
+```
+
+Skip the companion prompt explicitly:
+
+```bash
+./install.sh --skip-type-interface-organizer
+```
+
+If the companion skill is not installed or not discoverable in the active Codex skill roots, the pipeline skips the Type Interface Organizer stage and records that skip in `.pipeline/run.md`.
+
 ## Usage
 
 Invoke the short alias:
@@ -53,7 +73,7 @@ The initiating Codex session is only the Leader/orchestrator. All substantive wo
 4. Planner and Critic loop until the Critic approves or HITL is required.
 5. Executor implements the approved plan.
 6. Tester adds/runs focused verification.
-7. For TypeScript repos or TS/TSX diffs, Type Interface Organizer runs `$type-interface-organizer` for report-first conservative type/interface cleanup.
+7. For TypeScript repos or TS/TSX diffs, Type Interface Organizer runs `$type-interface-organizer` for report-first conservative type/interface cleanup when the companion skill is installed; otherwise this optional stage is skipped.
 8. Fixer handles failures or review findings.
 9. Final Reviewer decides `SHIP`, `NEEDS WORK`, or `BLOCK`.
 10. After `SHIP`, a separate generic `codex exec` session performs independent architectural/code-health review of the uncommitted changes with `model_reasoning_effort="xhigh"` and saves `.pipeline/external-review.md`.

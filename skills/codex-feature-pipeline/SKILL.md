@@ -90,7 +90,7 @@ Do not set all subagents to `xhigh` by default. Spend the highest reasoning budg
 4. Spawn Executor only after plan approval. Require `.pipeline/changes.md`.
 5. Spawn Tester. Require `.pipeline/test-results.md`.
 6. If tests fail, spawn Fixer, then return to Tester.
-7. If the repo is TypeScript or the diff includes TS/TSX files, spawn Type Interface Organizer with `$type-interface-organizer`. Require `.pipeline/type-interface-report.md`.
+7. If TypeScript applies and `$type-interface-organizer` is installed/discoverable, spawn Type Interface Organizer with `$type-interface-organizer`. Require `.pipeline/type-interface-report.md`. TypeScript applies when the repo has `tsconfig.json` or the diff includes TS/TSX files. If TypeScript applies but the skill is unavailable, skip this optional stage and record the skip in `.pipeline/run.md`.
 8. If Type Interface Organizer applies conservative edits, return to Tester before proceeding.
 9. If Type Interface Organizer returns `BLOCK`, stop and report the blocker.
 10. Spawn Final Reviewer. Require `.pipeline/review.md`.
@@ -204,7 +204,14 @@ Do not fix implementation code.
 
 ### Type Interface Organizer
 
-Run this stage only when the repository has `tsconfig.json` or the changed files include TypeScript/TSX. If neither is true, skip the stage and note the skip in `.pipeline/run.md`.
+Run this stage only when both conditions are true:
+
+- the repository has `tsconfig.json` or the changed files include TypeScript/TSX
+- `$type-interface-organizer` is installed/discoverable in the active Codex skill roots
+
+If the repository is not TypeScript and no TS/TSX files changed, skip the stage and note the skip in `.pipeline/run.md`.
+
+If the TypeScript condition is true but the companion skill is unavailable, skip the stage and write `Type Interface Organizer: skipped; $type-interface-organizer unavailable` to `.pipeline/run.md`. Do not block the feature pipeline solely because this optional companion skill is missing.
 
 Spawn a subagent with `$type-interface-organizer` injected. The subagent must read the active `$type-interface-organizer` skill body before doing the work. Prefer `~/.agents/skills/type-interface-organizer/SKILL.md`, then `$CODEX_HOME/skills/type-interface-organizer/SKILL.md`, then `~/.codex/skills/type-interface-organizer/SKILL.md`.
 
